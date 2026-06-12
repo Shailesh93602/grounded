@@ -1,0 +1,23 @@
+[
+  {
+    "question": "How do refunds work and how do I cancel my subscription?",
+    "expectSource": "billing.md",
+    "expectGrounded": true,
+    "expectAnswerIncludes": ["14"]
+  },
+  {
+    "question": "Which countries does Acme deliver to, and how is shipping tracking handled?",
+    "expectSource": "shipping.md",
+    "expectGrounded": true,
+    "expectAnswerIncludes": ["canada"]
+  },
+  {
+    "question": "Is Acme SOC 2 compliant and how are passwords and data encrypted?",
+    "expectSource": "security.md",
+    "expectGrounded": true
+  },
+  {
+    "question": "What is the airspeed velocity of an unladen swallow?",
+    "expectGrounded": false
+  }
+]
