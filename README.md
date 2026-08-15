@@ -45,7 +45,7 @@ npm test             # 41 tests, no API key / DB needed
 npm run check        # everything CI runs: typecheck + tests + eval
 ```
 
-Exercise the **pgvector** store too (7 extra tests, needs Docker):
+Exercise the **pgvector** store too (9 extra tests, needs Docker):
 ```bash
 docker compose up -d
 GROUNDED_TEST_DATABASE_URL=postgresql://postgres@localhost:5432/grounded npm test
