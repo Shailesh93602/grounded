@@ -2,7 +2,12 @@ import { ask, type AskOptions } from "../core/pipeline";
 
 export interface EvalCase {
   question: string;
-  /** a chunk from this source should be retrieved */
+  /**
+   * The answer should be *grounded in* this source — i.e. a chunk from it must
+   * clear the guardrail and end up cited. Checked against citations, not the
+   * raw top-k pull: on a small corpus a top-k pull returns every document, so
+   * scoring against it would make the hit-rate trivially 100%.
+   */
   expectSource?: string;
   /** should the guardrail allow an answer (true) or refuse (false)? */
   expectGrounded?: boolean;
@@ -40,7 +45,7 @@ export async function runEval(
   for (const c of cases) {
     const a = await ask(c.question, opts);
     const retrievalHit = c.expectSource
-      ? a.retrieved.some((r) => r.source === c.expectSource)
+      ? a.citations.some((cit) => cit.source === c.expectSource)
       : true;
     const groundedOk =
       c.expectGrounded === undefined || a.grounded === c.expectGrounded;

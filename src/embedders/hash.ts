@@ -13,6 +13,28 @@ const STOPWORDS = new Set(
   ),
 );
 
+/**
+ * Fold obvious plurals to their singular form so a question ("what is the
+ * refund window?") still matches a source that says "Refunds are allowed…".
+ * Without this the bag-of-tokens match is exact-string only, and natural
+ * paraphrases score 0 — i.e. the guardrail refuses questions the corpus
+ * actually answers. Deliberately conservative (no real stemmer): it only
+ * touches unambiguous English plural endings.
+ */
+export function normalizeToken(tok: string): string {
+  if (tok.length > 3 && tok.endsWith("ies")) return `${tok.slice(0, -3)}y`;
+  if (
+    tok.length > 4 &&
+    (tok.endsWith("sses") || tok.endsWith("shes") || tok.endsWith("ches"))
+  ) {
+    return tok.slice(0, -2);
+  }
+  if (tok.length > 3 && tok.endsWith("s") && !tok.endsWith("ss")) {
+    return tok.slice(0, -1);
+  }
+  return tok;
+}
+
 export class HashEmbedder implements Embedder {
   readonly id = "hash-embedder";
   constructor(readonly dimensions = 256) {}
@@ -24,8 +46,10 @@ export class HashEmbedder implements Embedder {
   private vectorize(text: string): number[] {
     const v = new Array<number>(this.dimensions).fill(0);
     const tokens = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
-    for (const tok of tokens) {
+    for (const raw of tokens) {
       // skip stopwords so similarity reflects content words, not "the/of/is"
+      if (STOPWORDS.has(raw)) continue;
+      const tok = normalizeToken(raw);
       if (STOPWORDS.has(tok)) continue;
       v[this.hash(tok) % this.dimensions]! += 1;
     }

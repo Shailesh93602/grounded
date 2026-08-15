@@ -36,4 +36,105 @@ describe("'I don't know' guardrail", () => {
     expect(a.grounded).toBe(true);
     expect(a.retrieved[0]!.source).toBe("security.md");
   });
+
+  // ── Trying to break the guardrail ─────────────────────────────────────────
+  // The refusal is the product's whole selling point, so these push on the
+  // three ways it could silently stop working.
+
+  it("refuses on a completely EMPTY store (nothing ingested at all)", async () => {
+    const embedder = new HashEmbedder(4096);
+    const store = new MemoryStore();
+    const chat = new RecordingChat();
+
+    const a = await ask("How do refunds work?", {
+      embedder,
+      store,
+      chat,
+      k: 5,
+      minScore: 0.15,
+    });
+
+    expect(await store.count()).toBe(0);
+    expect(a.retrieved).toHaveLength(0);
+    expect(a.grounded).toBe(false);
+    expect(a.answer).toBe(REFUSAL);
+    expect(chat.calls).toHaveLength(0);
+  });
+
+  it("refuses on a BELOW-THRESHOLD score even though chunks were retrieved", async () => {
+    // Distinct from the empty-store case: retrieval genuinely returns rows here,
+    // so this proves the numeric threshold is doing the work — not a
+    // "no results" shortcut.
+    const embedder = new HashEmbedder(4096);
+    const store = new MemoryStore();
+    const chat = new RecordingChat();
+    await ingest(loadDocsFromDir(docsDir), { embedder, store });
+
+    const question = "How do refunds work and how do I cancel my subscription?";
+    const base = { embedder, store, chat, k: 5 };
+
+    // Baseline: this question IS answerable at the normal threshold.
+    const allowed = await ask(question, { ...base, minScore: 0.15 });
+    expect(allowed.grounded).toBe(true);
+    expect(allowed.retrieved.length).toBeGreaterThan(0);
+    const topScore = allowed.retrieved[0]!.score;
+    expect(topScore).toBeGreaterThan(0);
+
+    // Same question, threshold raised just above the real top score → refuse.
+    chat.calls.length = 0;
+    const refused = await ask(question, { ...base, minScore: topScore + 0.01 });
+    expect(refused.retrieved.length).toBeGreaterThan(0); // context WAS retrieved
+    expect(refused.retrieved[0]!.score).toBeCloseTo(topScore, 10);
+    expect(refused.grounded).toBe(false);
+    expect(refused.answer).toBe(REFUSAL);
+    expect(refused.citations).toHaveLength(0);
+    expect(chat.calls).toHaveLength(0); // still never paid for a model call
+  });
+
+  it("is not a stuck 'always refuse': dropping the threshold lets the same question through", async () => {
+    // Guards against the opposite failure — a guardrail that refuses everything
+    // would technically never hallucinate but would also be useless.
+    const embedder = new HashEmbedder(4096);
+    const store = new MemoryStore();
+    const chat = new RecordingChat();
+    await ingest(loadDocsFromDir(docsDir), { embedder, store });
+
+    const offTopic = "What is the airspeed velocity of an unladen swallow?";
+    const strict = await ask(offTopic, {
+      embedder,
+      store,
+      chat,
+      k: 5,
+      minScore: 0.15,
+    });
+    expect(strict.grounded).toBe(false);
+
+    // minScore below the (zero) similarity → the model IS consulted.
+    const loose = await ask(offTopic, {
+      embedder,
+      store,
+      chat,
+      k: 5,
+      minScore: -1,
+    });
+    expect(loose.grounded).toBe(true);
+    expect(chat.calls).toHaveLength(1);
+  });
+
+  it("refuses paraphrased-but-unsupported questions rather than answering from a near-miss", async () => {
+    const e = offlineEngine();
+    await ingest(loadDocsFromDir(docsDir), e);
+
+    // Plausible-sounding, but the corpus (billing/shipping/security) says
+    // nothing about any of these.
+    for (const q of [
+      "How do I fine-tune a large language model on my own data?",
+      "What is the capital city of Mongolia?",
+      "Which kubernetes ingress controller should I pick?",
+    ]) {
+      const a = await ask(q, e);
+      expect(a.grounded, `expected refusal for: ${q}`).toBe(false);
+      expect(a.answer).toBe(REFUSAL);
+    }
+  });
 });

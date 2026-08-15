@@ -1,5 +1,8 @@
 # Grounded
 
+[![CI](https://github.com/Shailesh93602/grounded/actions/workflows/ci.yml/badge.svg)](https://github.com/Shailesh93602/grounded/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 > A production-grade **RAG starter** that answers from *your* sources, **cites them**, and says **"I don't know"** instead of hallucinating.
 
 Most RAG demos look great until real users hit them — then they hallucinate, double-charge on retries, re-embed everything on every deploy, and you have no way to tell if a prompt change made things worse. **Grounded** is the boring, reliable parts done right, in a small codebase you can read in 20 minutes and ship on.
@@ -38,7 +41,14 @@ curl -XPOST localhost:3000/ask -H 'content-type: application/json' \
 Run the eval + tests:
 ```bash
 npm run eval         # scores the bundled Q&A set (offline)
-npm test             # 10 tests, no API key / DB needed
+npm test             # 41 tests, no API key / DB needed
+npm run check        # everything CI runs: typecheck + tests + eval
+```
+
+Exercise the **pgvector** store too (7 extra tests, needs Docker):
+```bash
+docker compose up -d
+GROUNDED_TEST_DATABASE_URL=postgresql://postgres@localhost:5432/grounded npm test
 ```
 
 ## Production (OpenAI + pgvector)
@@ -51,7 +61,12 @@ npm run migrate                 # create the vector table + cosine index
 npm run ingest -- ./your-docs   # embed your corpus (idempotent)
 npm start
 ```
+Every `npm run` script loads `.env` automatically (`--env-file-if-exists`, Node ≥20.12).
 Works with Azure OpenAI / proxies via `OPENAI_BASE_URL`.
+
+> `npm run ingest` only persists with `STORE=pgvector` — the memory store lives
+> and dies with the process, so ingest via the running server's `/ingest` when
+> you're in the zero-setup default.
 
 ---
 
@@ -61,9 +76,9 @@ Works with Azure OpenAI / proxies via `OPENAI_BASE_URL`.
 
 **The guardrail** (`ask()`): we retrieve top-`k`, and if the best cosine similarity is below `RAG_MIN_SCORE`, we return a refusal — the model is never even called, so it can't hallucinate (and you don't pay for it).
 
-**Citations**: the answer ships with the exact source chunks + scores it was built from, so users (and you) can verify it.
+**Citations**: the answer ships with the exact source chunks + scores it was built from, so users (and you) can verify it. Only chunks that clear `minScore` are cited — and those are exactly the chunks put in front of the model, so the citation list is what the answer was actually built from, not the whole top-`k` pull.
 
-**Evals** (`src/eval/run.ts`): a JSON dataset of questions with expected sources / grounded-ness / answer substrings. `npm run eval` scores retrieval hit-rate and answer correctness — run it in CI to catch regressions from a prompt/model/chunking change.
+**Evals** (`src/eval/run.ts`): a JSON dataset of questions with expected sources / grounded-ness / answer substrings. `npm run eval` scores retrieval hit-rate and answer correctness — run it in CI to catch regressions from a prompt/model/chunking change. Retrieval is scored against the **cited** chunks, not the raw top-`k`: on a small corpus top-`k` returns every document, which would make the hit-rate trivially 100%.
 
 ## Architecture (swap any piece)
 

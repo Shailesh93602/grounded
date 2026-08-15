@@ -6,7 +6,9 @@ on:
   pull_request:
 
 jobs:
+  # The zero-setup path a stranger gets: no API key, no database.
   test:
+    name: offline (no key, no DB)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,3 +20,35 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run eval # offline eval gate (exits non-zero if any case regresses)
+
+  # The production storage path. Same pipeline code, real pgvector — this is
+  # what makes the "store-agnostic" claim checkable rather than aspirational.
+  pgvector:
+    name: pgvector store
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: grounded
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run migrate
+        env:
+          DATABASE_URL: postgresql://postgres@localhost:5432/grounded
+      - run: npm test
+        env:
+          GROUNDED_TEST_DATABASE_URL: postgresql://postgres@localhost:5432/grounded
