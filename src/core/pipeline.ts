@@ -95,14 +95,21 @@ export async function ask(
     return { answer: REFUSAL, citations: [], grounded: false, retrieved };
   }
 
-  const context = retrieved
+  // Only chunks that clear the bar become context/citations. A top-k pull
+  // always returns k rows, including irrelevant ones (score ~0) — feeding those
+  // to the model wastes tokens and invites distraction, and "citing" them makes
+  // the citation list untrustworthy. `retrieved` still carries the full pull for
+  // debugging and eval.
+  const relevant = retrieved.filter((r) => r.score >= minScore);
+
+  const context = relevant
     .map((r, i) => `[${i + 1}] (source: ${r.source})\n${r.text}`)
     .join("\n\n");
   const user = `Context:\n${context}\n\nQuestion: ${question}\n\nAnswer using only the context above, citing sources as [n].`;
 
   const { text } = await opts.chat.complete(SYSTEM_PROMPT, user);
 
-  const citations: Citation[] = retrieved.map((r) => ({
+  const citations: Citation[] = relevant.map((r) => ({
     source: r.source,
     chunkId: r.id,
     score: r.score,

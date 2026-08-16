@@ -15,11 +15,20 @@ idempotent ingest (sha256 content-hash dedup + prune) · retries/backoff (`withR
 
 ## Verify (offline, no key/DB)
 ```
-npm run typecheck && npm test && npm run eval   # 10 tests, eval 4/4
-npm start   # zero-setup demo server (offline)
+npm run check   # = typecheck + test + eval. 41 tests, eval 4/4
+npm start       # zero-setup demo server (offline)
 ```
+Plus 9 pgvector tests, skipped unless a DB is supplied:
+```
+docker compose up -d
+GROUNDED_TEST_DATABASE_URL=postgresql://postgres@localhost:5432/grounded npm test
+```
+CI runs both jobs (offline + pgvector service container).
+
 ## Production
-`PROVIDER=openai STORE=pgvector` + `docker compose up -d` (pgvector/pgvector:pg16) + `npm run migrate`. Honors `OPENAI_BASE_URL` (Azure/proxies).
+`PROVIDER=openai STORE=pgvector` + `docker compose up -d` (pgvector/pgvector:pg16) + `npm run migrate`. Honors `OPENAI_BASE_URL` (Azure/proxies). All `npm run` scripts load `.env` via `--env-file-if-exists` (needs Node ≥20.12).
+
+**pgvector dim ceiling:** HNSW indexes cap at 2000 dims, so `text-embedding-3-large` (3072) and the offline HashEmbedder (4096) get no ANN index — `migrate()` warns and falls back to exact search instead of half-failing. Use `EMBED_DIM=1536` for an indexed setup.
 
 ## Status
 Built + verified 2026-06-12. To publish: `gh repo create`. Then share on X (see ../EXAVEL/content-calendar.md) + pin on GitHub.
